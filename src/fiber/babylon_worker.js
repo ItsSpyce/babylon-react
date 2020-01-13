@@ -1,4 +1,4 @@
-import Babylon from 'babylonjs';
+import { Engine, Scene } from 'babylonjs';
 import { send, listen } from './lpc';
 import messages from './messages';
 
@@ -34,10 +34,9 @@ const w = fn => (...args) => {
   }
 };
 
-function createEngine(_, props) {
+function createEngine(_, { canvas, options }) {
   if (engine) return;
-  const { canvas, connectToGraphicsDevice, options } = props;
-  engine = new Babylon.Engine(canvas, true, options, true);
+  engine = new Engine(canvas, true, options, true);
   return engine;
 }
 
@@ -58,13 +57,13 @@ function runEngine() {
 
 listen(messages.RUN_ENGINE, w(runEngine));
 
-function createScene(props) {
+function createScene(_, props) {
   console.log('Creating scene');
   if (!engine) {
     throw new Error('Cannot create scene without registered engine!');
   }
-  activeScene = new Babylon.Scene(engine);
-  send(messages.CREATE_SCENE, activeScene.uid);
+  activeScene = new Scene(engine);
+  send(activeScene.uid);
 }
 
 listen(messages.CREATE_SCENE, w(createScene));

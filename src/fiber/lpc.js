@@ -1,73 +1,87 @@
+import { useState } from 'react';
 import PubSub from 'pubsub-js';
+import { uuidv4 } from './utils';
 
 const registeredNodes = Object.create(null);
 
+const lpcChannel = (lpcNode, channel) => `${lpcNode.id}|${channel}`;
+
 export class LpcNode {
-  constructor(id, token) {
+  constructor(id = uuidv4()) {
     this.id = id;
-    this.token = token;
-    registeredNodes[token] = this;
+    // don't want external sources to access this as easy
+    this.__cancelTokens = Object.create(null);
+    registeredNodes[this.id] = this;
   }
 
-  unsubscribe() {
-    PubSub.unsubscribe(this.token);
+  send(channel, message, callback = null) {
+    console.log('sending', this, channel, message);
+    if (callback && typeof callback === 'function') {
+      this.once(lpcChannel(this, channel), createErrorWrapper(callback));
+    }
+    PubSub.publish(lpcChannel(this, channel), message);
   }
 
-  send(data) {
-    PubSub.publish(this.id, data);
+  listen(channel, handler) {
+    console.log('listening', this, channel);
+    const cancelToken = PubSub.subscribe(
+      lpcChannel(this, channel),
+      createErrorWrapper(handler)
+    );
+    this.__cancelTokens[channel] = cancelToken;
+    return this;
+  }
+
+  /**
+   *
+   * @param {string} channel
+   * @param {(channel: string, message: any)} handler
+   */
+  once(channel, handler) {
+    const cancelToken = PubSub.subscribe(
+      lpcChannel(this, channel),
+      createErrorWrapper((channel, message) => {
+        handler(channel, message);
+        PubSub.unsubscribe(cancelToken);
+      })
+    );
+
+    return this;
+  }
+
+  unsubscribe(channel) {
+    if (!this.__cancelTokens[channel]) {
+      return;
+    }
+
+    PubSub.unsubscribe(this.__cancelTokens[channel]);
+    delete this.__cancelTokens[channel];
+    return this;
+  }
+
+  static fromChannel(channel) {
+    const channelParts = channel.split('|');
+    if (channelParts.length <= 1) {
+      throw new Error(`Channel does not have node ID: ${channel}`);
+    }
+    const nodeId = channelParts[0];
+    return registeredNodes[nodeId];
   }
 }
 
+export const useLpc = () => {
+  const [node] = useState(new LpcNode());
+  return node;
+};
+
+/**
+ *
+ * @param {(channel: string, message: any) => void} fn
+ */
 const createErrorWrapper = fn => (...args) => {
   try {
     return fn.apply(null, args);
   } catch (err) {
     return err;
   }
-};
-
-/**
- * Publishes a message to the given channel ID
- *
- * @param {string} id
- * @param {*} data
- * @param {(id: string, args: any) => void} callback
- */
-export function send(id, data, callback = null) {
-  console.log(id, data);
-  if (callback && typeof callback === 'function') {
-    listen.once(id, (id, data) => {
-      callback(id, data);
-    });
-  }
-  PubSub.publish(id, data);
-}
-
-/**
- * Returns a listener for handling messages on said channel
- *
- * @param {string} id
- * @param {(id: string, args: any) => void} handler
- *
- * @returns {LpcNode} A node that represents easy access to the listener
- */
-export function listen(id, handler) {
-  const token = PubSub.subscribe(id, createErrorWrapper(handler));
-  return new LpcNode(id, token);
-}
-
-/**
- * Listeners for a message on the given channel once then
- * unsubscribes itself
- *
- * @param {string} id
- * @param {(id: string, args: any) => void} handler
- */
-listen.once = (id, handler) => {
-  const node = listen(id, (id, args) => {
-    const wrapped = createErrorWrapper(handler);
-    wrapped(id, args);
-    node.unsubscribe();
-  });
-  return node;
 };

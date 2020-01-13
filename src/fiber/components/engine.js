@@ -1,4 +1,4 @@
-import { send } from '../lpc';
+import { useLpc } from '../lpc';
 import { CREATE_ENGINE } from '../messages';
 
 const Engine = ({
@@ -7,9 +7,10 @@ const Engine = ({
   options,
   children
 }) => {
+  const lpc = useLpc();
   if (canvas) {
-    send(CREATE_ENGINE, {
-      canvas: canvas.current,
+    lpc.send(CREATE_ENGINE, {
+      canvas,
       connectToGraphicsDevice,
       options
     });
